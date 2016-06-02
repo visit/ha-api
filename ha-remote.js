@@ -77,12 +77,17 @@ var HAServer = function(backend){
  */
 var haRemote = function(socketDefinition){
     haproxy = new HAproxy(socketDefinition);
+    statCallbacks = [];
     /**
      * get HAProxy instance information
      * @param callback
      * @private
      */
     var _info = function(callback){
+        if(!statCache.updated) {
+          return statCallbacks.push(() => {_info(callback)});
+        }
+
         var formatInfo = function(info,callback){
             var result={};
             info = info.split('\n').map(function(line){
@@ -105,7 +110,9 @@ var haRemote = function(socketDefinition){
      * @private
      */
     var _stats = function(options,callback){
-
+        if(!statCache.updated) {
+          return statCallbacks.push(() => {_stats(options, callback)});
+        }
         if(arguments.length==1 && typeof(arguments[0])=='function'){
             callback=arguments[0];
             options={};
@@ -204,13 +211,19 @@ var haRemote = function(socketDefinition){
     var collectStats = function(options,callback){
         haproxy.send('show stat '+options.proxyid+' '+options.types+' '+options.serverid,callback);
     };
+
     setInterval(function(){
         collectStats(GLOBAL_STATS_OPTIONS,function(err,data){
             if(err){return(callback && callback(err));}
             statCache.data=data;
             statCache.updated=Date.now();
+
+            statCallbacks.forEach((cb) => cb());
+            statCallbacks = [];
         });
     },CACHE_TTL);
+
+
 
     return {
         stats : _stats,
